@@ -1,8 +1,9 @@
 // Reconstructed stub of eiface.h (IServerPluginCallbacks).
 // Real HL2SDK: public/eiface.h. The binary exports ISERVERPLUGINCALLBACKS003.
 //
-// The vtable order below mirrors SDK 2013 revision 003 exactly, so the stub
-// build exercises the same declaration shape the real SDK build uses.
+// The vtable order below mirrors SDK 2013 revision 003 exactly, including the
+// revision-2/3 tail (OnQueryCvarValueFinished, OnEdictAllocated, OnEdictFreed),
+// so the stub build exercises the same declaration shape the real SDK uses.
 
 #ifndef CRASHDIAG_STUB_EIFACE_H
 #define CRASHDIAG_STUB_EIFACE_H
@@ -12,14 +13,18 @@
 struct edict_t;
 class CCommand;
 
-// PLUGIN_RESULT lives in eiface.h in the real SDK; every callback that can
-// steer the engine returns it.
+// PLUGIN_RESULT lives in eiface.h/iserverplugin.h in the real SDK; every
+// callback that can steer the engine returns it.
 enum PLUGIN_RESULT
 {
     PLUGIN_CONTINUE = 0,
     PLUGIN_OVERRIDE,
     PLUGIN_STOP
 };
+
+// Only the type names are needed by the callback signatures below.
+typedef int QueryCvarCookie_t;
+typedef int EQueryCvarValueStatus;
 
 abstract_class IServerPluginCallbacks
 {
@@ -51,6 +56,13 @@ public:
     virtual PLUGIN_RESULT ClientCommand(edict_t* pEntity, const CCommand& args) = 0;
     virtual PLUGIN_RESULT NetworkIDValidated(const char* pszName,
                                              const char* pszNetworkID) = 0;
+
+    // Revision 2/3 tail.
+    virtual void OnQueryCvarValueFinished(QueryCvarCookie_t iCookie, edict_t* pPlayerEntity,
+                                          EQueryCvarValueStatus eStatus, const char* pCvarName,
+                                          const char* pCvarValue) = 0;
+    virtual void OnEdictAllocated(edict_t* edict) = 0;
+    virtual void OnEdictFreed(const edict_t* edict) = 0;
 };
 
 #endif // CRASHDIAG_STUB_EIFACE_H

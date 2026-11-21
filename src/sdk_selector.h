@@ -1,5 +1,14 @@
 // Selects between the bundled stub SDK (CI syntax check) and a real HL2SDK
 // (engine build). Set -DCRASHDIAG_STUB_SDK=ON for the stub build.
+//
+// Real-SDK note: hl2sdk `dods` has no public/IServerPlugin.h, but
+// public/eiface.h pulls in public/engine/iserverplugin.h, which *does* declare
+// ISERVERPLUGINCALLBACKS003 (PLUGIN_RESULT, SetCommandClient,
+// OnQueryCvarValueFinished, OnEdictAllocated, OnEdictFreed). Including eiface.h
+// therefore gives us the authoritative v003 interface; declaring it again
+// alongside the SDK would be a redefinition.
+// eiface.h also brings in convar.h (CCommand/ConVar) and edict.h.
+
 #ifndef CRASHDIAG_SDK_SELECTOR_H
 #define CRASHDIAG_SDK_SELECTOR_H
 
@@ -10,18 +19,8 @@
   #include "engine_ifs.h"
   #include "tier0.h"
 #else
-  // Include order matters: eiface.h defines PLUGIN_RESULT, which the local
-  // plugin-callback declaration below uses.
   #include <interface.h>
   #include <eiface.h>
-  #include <command.h>
-  #include <edict.h>
-  #ifdef CRASHDIAG_SDK_HAS_ISERVERPLUGIN
-    #include <IServerPlugin.h>
-  #else
-    // hl2sdk `dods` has no plugin-callback declaration of its own.
-    #include "sdk/compat/iserverplugin.h"
-  #endif
   #include <icvar.h>
 #endif
 

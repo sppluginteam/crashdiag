@@ -40,6 +40,12 @@ public:
     PLUGIN_RESULT ClientCommand(edict_t* pEntity, const CCommand& args) override;
     PLUGIN_RESULT NetworkIDValidated(const char* pszName,
                                      const char* pszNetworkID) override;
+    // Revision 2/3 tail of the vtable: informational callbacks only.
+    void OnQueryCvarValueFinished(QueryCvarCookie_t iCookie, edict_t* pPlayerEntity,
+                                  EQueryCvarValueStatus eStatus, const char* pCvarName,
+                                  const char* pCvarValue) override {}
+    void OnEdictAllocated(edict_t* edict) override {}
+    void OnEdictFreed(const edict_t* edict) override {}
 
 private:
     CCrashDiagPlugin();
