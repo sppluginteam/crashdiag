@@ -1,0 +1,19 @@
+# Build output
+build/
+build-win32/
+build-win64/
+*.so
+*.dll
+*.o
+*.obj
+
+# Local SDK / dependency checkouts (build scripts clone these on demand)
+deps/
+hl2sdk/
+
+# Editor / OS noise
+.vscode/
+.idea/
+*.user
+Thumbs.db
+.DS_Store

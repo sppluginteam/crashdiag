@@ -1,0 +1,107 @@
+name: Build crashdiag
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Fast type-check against the bundled stub SDK. Needs no engine SDK checkout.
+  # ---------------------------------------------------------------------------
+  lint:
+    name: Syntax check (stub SDK)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake g++
+
+      - name: Type-check all sources
+        run: |
+          set -e
+          for f in src/plugin.cpp src/crash_report.cpp src/heartbeat.cpp src/interface.cpp; do
+            echo "== $f"
+            g++ -std=c++17 -fsyntax-only -Wall -Wextra \
+              -DCRASHDIAG_STUB_SDK -I src -I sdk/stub "$f"
+          done
+
+      - name: Full stub build (configure + link)
+        run: |
+          set -e
+          cmake -S . -B build -DCRASHDIAG_STUB_SDK=ON
+          cmake --build build --parallel
+
+      - name: Verify exported entry points
+        run: |
+          set -e
+          # The engine loads the plugin through CreateInterface; cvar is the
+          # exported ICvar pointer seen in the recovered binary.
+          nm -D --defined-only build/libcrashdiag.so | grep -E ' T CreateInterface$| B cvar$'
+
+  # ---------------------------------------------------------------------------
+  # Attempt a real DoDS (Day of Defeat: Source) SDK build.
+  #
+  # This is best-effort: the plugin was reconstructed from a compiled binary,
+  # and the real hl2sdk-dods headers / ABI may differ from the stub signatures.
+  # The job is allowed to fail without breaking the stub type-check above; its
+  # purpose is to surface exactly which header/ABI mismatches remain.
+  # ---------------------------------------------------------------------------
+  build-dods:
+    name: Attempt DoDS SDK build (Windows x64)
+    runs-on: windows-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Clone hl2sdk-dods (alliedmodders/hl2sdk, branch dods)
+        run: |
+          git clone --depth 1 --branch dods https://github.com/alliedmodders/hl2sdk.git deps/hl2sdk-dods
+          if (Test-Path deps/hl2sdk-dods/public/eiface.h) {
+            Write-Host "SDK headers present."
+          } else {
+            Write-Warning "public/eiface.h not found; SDK layout may differ."
+          }
+
+      - name: Build against hl2sdk-dods
+        shell: cmd
+        run: build.bat --sdk-path deps\hl2sdk-dods
+
+      - name: Upload DoDS artifacts (if any)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dods-win64
+          path: build-win64/**/*.dll
+
+  # ---------------------------------------------------------------------------
+  # Diagnostics: always report which jobs succeeded or failed.
+  # ---------------------------------------------------------------------------
+  diagnose:
+    name: Build diagnostics
+    if: always()
+    needs: [lint, build-dods]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Report job outcomes
+        run: |
+          echo "lint       = ${{ needs.lint.result }}"
+          echo "build-dods = ${{ needs.build-dods.result }}"
+          echo
+          if [ "${{ needs.lint.result }}" != "success" ]; then
+            echo "::error::Stub syntax check failed - the reconstructed sources do not compile."
+            exit 1
+          fi
+          if [ "${{ needs.build-dods.result }}" != "success" ]; then
+            echo "::warning::DoDS real-SDK build did not succeed. This job is best-effort;"
+            echo "            inspect the build-dods log for header/ABI mismatches."
+          fi
