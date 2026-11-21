@@ -68,7 +68,6 @@ jobs:
   dods:
     name: DoDS SDK header check (Windows ${{ matrix.arch }})
     runs-on: windows-2022
-    continue-on-error: true
     strategy:
       fail-fast: false
       matrix:
@@ -134,6 +133,6 @@ jobs:
             exit 1
           fi
           if [ "${{ needs.dods.result }}" != "success" ]; then
-            echo "::warning::One or both DoDS header checks failed. This job is best-effort;"
-            echo "            inspect the failed matrix leg for header/ABI mismatches."
+            echo "::error::One or both DoDS header checks failed - see the diagnostics annotation on the failed matrix leg."
+            exit 1
           fi
