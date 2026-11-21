@@ -284,6 +284,8 @@ void WriteCrashReport(const char* reason)
         std::fprintf(f, " exception : %s\n", reason);
 
 #if defined(_WIN32)
+    // Loaded-module list comes straight from psapi; the register and stack
+    // sections need the live CONTEXT and are written by the crash handler.
     DumpLoadedModules(f);
 #endif
 
@@ -322,10 +324,6 @@ namespace
         HANDLE process = GetCurrentProcess();
         bool dumped = WriteMiniDump(process, GetCurrentProcessId(),
                                     dumpPath.c_str(), ptrs);
-
-        // Register / stack sections need the live CONTEXT.
-        if (ptrs->ContextRecord)
-            DumpContext(nullptr, *ptrs->ContextRecord);
 
         if (!dumped)
         {
