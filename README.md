@@ -6,6 +6,8 @@ exceptions, writes a text report, a Windows minidump (`.mdmp`) and an exception
 classification sidecar (`.cause`), and periodically appends a `heartbeat.log` line
 with server state.
 
+[中文说明文档 / Chinese documentation](README.zh-CN.md)
+
 > ⚠️ **Source provenance — read before relying on this code.**
 >
 > This repository is a **behavior-level reconstruction** of an original compiled
@@ -15,12 +17,29 @@ with server state.
 > format strings, imported `dbghelp` / `KERNEL32` / tier0 symbols) and from the
 > captured crash report, minidump and heartbeat logs.
 >
-> It is **not** a byte-for-byte decompilation. The control flow, helper
-> decomposition and internal data layout are reconstructed to match the observed
-> behavior. The reconstructed binary is **not ABI-identical** to the original
-> `crashdiag.dll`; treat this as a clean-room reimplementation that reproduces the
-> public plugin contract and the observed output, not a restored copy of the
-> lost source.
+> It is **not** a byte-for-byte decompilation. The reconstructed binary is **not
+> ABI-identical** to the original `crashdiag.dll`; treat this as a clean-room
+> reimplementation that reproduces the public plugin contract and the observed
+> output, not a restored copy of the lost source.
+
+## Binary architecture: 32-bit and 64-bit are separate files
+
+One `.dll` / `.so` **cannot** serve both architectures. A PE or ELF file carries a
+single machine type in its header (`IMAGE_FILE_MACHINE_I386` vs
+`IMAGE_FILE_MACHINE_AMD64`), so the binary must match the server process
+(`srcds.exe` 32-bit vs `srcds_win64.exe` 64-bit). Two builds are required:
+
+| Target server | Binary |
+| --- | --- |
+| `srcds.exe` (32-bit) | `crashdiag.dll` built as Win32 x86 |
+| `srcds_win64.exe` (x64) | `crashdiag.dll` built as x64 |
+| Linux 32-bit | `crashdiag.so` (i386) |
+| Linux 64-bit | `crashdiag.so` (x86_64) |
+
+The captured crash came from a 64-bit server (`srcds_win64.exe`), so this
+reconstruction targets x64 first. Ship one archive per architecture (or two
+subdirectories) and install the one matching the server; a mismatched binary is
+simply rejected by the loader and the plugin never loads.
 
 ## What the recovered binary told us
 
@@ -69,42 +88,27 @@ overflow, in-page error, breakpoint, the C++ EH code `0xE06D7363`,
 
 ## Install
 
-1. Build the plugin for your server platform (see below).
-2. Copy the resulting `crashdiag.dll` / `libcrashdiag.so` next to the plugin
-   loader, and the `crashdiag.vdf` manifest:
+1. Build the plugin for the architecture your server runs (see above).
+2. Copy the binary and the manifest into the mod directory:
 
    ```
-   <mod>/addons/crashdiag.dll      # Windows x64
+   <mod>/addons/crashdiag.dll      # Windows (matching 32/64-bit srcds)
    <mod>/addons/crashdiag.so       # Linux (best-effort)
    <mod>/addons/crashdiag.vdf
    ```
 
-   The bundled `crashdiag.vdf` registers the plugin as `addons/crashdiag`.
-
 ## Build
 
-Two build modes are provided; the same sources compile against either the bundled
-stub headers or a real HL2SDK.
-
 ### Stub SDK build (no engine SDK required)
-
-Used by CI for a fast syntax / type check. Compiles against `sdk/stub/`.
 
 ```bash
 cmake -S . -B build -DCRASHDIAG_STUB_SDK=ON
 cmake --build build
 ```
 
-or simply:
-
-```bash
-./build.sh
-```
+or `./build.sh`. This is the CI type-check path.
 
 ### Real HL2SDK build (engine target)
-
-Point CMake at a checked-out HL2SDK whose `public/` tree has `eiface.h`,
-`icvar.h`, `interface.h`:
 
 ```bash
 ./build.sh --sdk-path /path/to/hl2sdk-dods
@@ -118,35 +122,29 @@ build.bat --sdk-path C:\path\to\hl2sdk-dods
 
 ### DoDS (Day of Defeat: Source)
 
-The original captured server was a DoDS-class Source server (`srcds_win64.exe`,
-map `de_dust`). The CI `build-dods` job clones the `dods` branch of
-`alliedmodders/hl2sdk` and attempts a real-SDK compile. Because the Win32-only
-capture path (dbghelp, process memory, exception classification) is guarded by
-`#if defined(_WIN32)`, the POSIX build keeps the plugin entry points but reports
-dump capture as unavailable.
+The CI `build-dods` job clones the `dods` branch of `alliedmodders/hl2sdk` and
+attempts a real-SDK x64 build. Because the Win32-only capture path (dbghelp,
+process memory, exception classification) is guarded by `#if defined(_WIN32)`,
+the POSIX build keeps the plugin entry points but reports dump capture as
+unavailable.
 
 ## Repository layout
 
 ```
-src/
-  plugin.cpp / plugin.h        CCrashDiagPlugin - IServerPluginCallbacks implementation
-  crash_report.cpp / .h        Handlers, text report, minidump, classification
-  heartbeat.cpp / .h           Periodic heartbeat.log writer
-  interface.cpp                CreateInterface factory, interface registration, `cvar` export
-  crashdiag_globals.h          Shared snapshot / counter structs
-  sdk_selector.h               Stub vs. real SDK header selection
-sdk/stub/                      Minimal name/ABI-compatible stub headers (CI syntax check)
-CMakeLists.txt                 Stub and real-SDK build modes
-build.sh / build.bat           Convenience one-shot build scripts
-crashdiag.vdf                  Engine plugin manifest
+src/                          plugin, crash reporter, heartbeat, interface entry
+sdk/stub/                     Minimal name/ABI-compatible stub headers (CI syntax check)
+CMakeLists.txt                Stub and real-SDK build modes
+build.sh / build.bat          Convenience one-shot build scripts
+crashdiag.vdf                 Engine plugin manifest
+.github/workflows/build.yml   Stub type-check + best-effort DoDS build
 ```
 
 ## Caveats
 
-- The stub headers in `sdk/stub/` declare only the methods the plugin calls.
-  Real engine ABI vtable order and full interface signatures must be taken from
-  the target `hl2sdk-*` tree.
+- The stub headers declare only the methods the plugin calls. Real engine ABI
+  vtable order and full interface signatures must come from the target
+  `hl2sdk-*` tree.
 - This reconstruction was done without a decompiler; the internal structure may
   differ from the lost original even where the observable output matches.
-- The Linux build is a best-effort port. Crash dump capture on non-Windows is a
-  stubbed no-op; the heartbeat and report writers still work.
+- The Linux build is a best-effort port; dump capture on non-Windows is a
+  stubbed no-op while the heartbeat and report writers still work.
