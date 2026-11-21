@@ -130,6 +130,84 @@ jobs:
           if-no-files-found: error
 
   # ---------------------------------------------------------------------------
+  # Publish the two installable packages as a prerelease.
+  # Runs only when the commit message carries [release]; the tag comes from
+  # .release/tag. `gh release create --target <sha>` creates the tag if absent,
+  # so no manual tag push is needed.
+  # ---------------------------------------------------------------------------
+  release:
+    name: Publish DoDS test build
+    needs: [dods]
+    if: github.event_name == 'push' && contains(github.event.head_commit.message, '[release]')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/download-artifact@v5
+        with:
+          pattern: crashdiag-dods-win*
+          path: artifacts
+
+      - name: Package addons/crashdiag for win32 and win64
+        run: |
+          set -e
+          for arch in 32 64; do
+            dll=$(find "artifacts/crashdiag-dods-win$arch" -name crashdiag.dll | head -1)
+            [ -n "$dll" ] || { echo "::error::crashdiag.dll missing for win$arch"; exit 1; }
+            d="pkg/crashdiag-win$arch/crashdiag"
+            mkdir -p "$d"
+            cp "$dll" "$d/crashdiag.dll"
+            cp crashdiag.vdf "$d/crashdiag.vdf"
+          done
+
+          cat > pkg/crashdiag-win32/install.txt <<'EOF'
+          crashdiag - DoDS test build (Win32 x86)
+
+          Install for srcds.exe (32-bit server):
+            1. copy the "crashdiag" folder into <game>/addons/
+            2. restart the server or changelevel
+            3. plugin_print should list: crashdiag - independent ES/ESTools crash diagnostic
+            4. crashdiag_enable_test 1; crashdiag_test_crash  -- verifies capture
+
+          Logs land in <game>/crashdiag/ (crash_*.log, crash_*.mdmp, crash_*.cause,
+          heartbeat.log).
+          EOF
+          sed 's/Win32 x86/Win64 x64/; s/srcds.exe (32-bit server)/srcds_win64.exe (64-bit server)/' \
+            pkg/crashdiag-win32/install.txt > pkg/crashdiag-win64/install.txt
+
+          (cd pkg/crashdiag-win32 && zip -r "$GITHUB_WORKSPACE/crashdiag-dods-win32.zip" .)
+          (cd pkg/crashdiag-win64 && zip -r "$GITHUB_WORKSPACE/crashdiag-dods-win64.zip" .)
+          ls -l crashdiag-dods-win*.zip
+
+      - name: Create prerelease with both packages
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          tag=$(tr -d '[:space:]' < .release/tag)
+          [ -n "$tag" ] || { echo "::error::.release/tag is empty"; exit 1; }
+          echo "publishing $tag at $GITHUB_SHA"
+          cat > notes.md <<EOF
+          DoDS (Day of Defeat: Source) test build of the reconstructed crashdiag plugin.
+
+          Assets
+            - crashdiag-dods-win32.zip  - addons/crashdiag for srcds.exe (x86)
+            - crashdiag-dods-win64.zip  - addons/crashdiag for srcds_win64.exe (x64)
+
+          Built from $GITHUB_SHA against alliedmodders/hl2sdk branch dods.
+          The DLL links neither tier0.lib nor tier1.lib: it carries its own
+          CreateInterface factory and ConVar/ConCommand bodies, and logs through
+          IVEngineServer::LogPrint. Runtime behaviour on a real server is not yet
+          verified - this is a test build.
+          EOF
+          gh release create "$tag" \
+            --target "$GITHUB_SHA" \
+            --title "crashdiag DoDS 测试版 ($tag)" \
+            --notes-file notes.md \
+            --prerelease \
+            crashdiag-dods-win32.zip crashdiag-dods-win64.zip
+
+  # ---------------------------------------------------------------------------
   # Diagnostics: always report which jobs succeeded or failed.
   # ---------------------------------------------------------------------------
   diagnose:
