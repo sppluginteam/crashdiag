@@ -16,18 +16,14 @@ project(crashdiag LANGUAGES CXX)
 #       shared object because the stub SDK also stubs tier0/ConVar symbols.
 #
 #   CRASHDIAG_STUB_SDK=OFF -DHL2SDK_PATH=<dir>
-#       Compile against a real HL2SDK (e.g. hl2sdk-dods).
+#       Compile against a real HL2SDK (e.g. hl2sdk-dods). This links a real
+#       dll/so and needs neither tier0.lib nor tier1.lib: the plugin carries its
+#       own interface factory and its own ConVar/ConCommand bodies
+#       (src/compat/tier1_min.cpp) instead of linking Valve's libraries.
 #
-#       CRASHDIAG_COMPILE_ONLY=ON (recommended for CI)
-#           Build an OBJECT library only: verifies that the sources are
-#           header/ABI compatible with the real SDK without linking. This is
-#           necessary because hl2sdk ships headers only - tier0/tier1
-#           libraries must be built separately (as SourceMod does), so a
-#           link against the SDK alone always ends in LNK2019.
-#
-#       CRASHDIAG_COMPILE_ONLY=OFF (requires real tier0/tier1 libs)
-#           Produces the loadable .dll / .so. Point the build at a tree where
-#           tier0.lib/tier1.lib are available.
+#       CRASHDIAG_COMPILE_ONLY=ON
+#           Build an OBJECT library instead of a shared one, for header/ABI
+#           checks only.
 # =============================================================================
 
 set(CMAKE_CXX_STANDARD 17)
@@ -37,7 +33,7 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src")
 
 option(CRASHDIAG_STUB_SDK "Compile against the bundled stub SDK" ON)
-option(CRASHDIAG_COMPILE_ONLY "Object library only (no link) - real-SDK header check" OFF)
+option(CRASHDIAG_COMPILE_ONLY "Object library only (no link)" OFF)
 set(HL2SDK_PATH "" CACHE PATH "Path to a real HL2SDK public/ tree (non-stub build)")
 
 set(CRASHDIAG_SOURCES
@@ -45,7 +41,14 @@ set(CRASHDIAG_SOURCES
     "${SRC_DIR}/crash_report.cpp"
     "${SRC_DIR}/heartbeat.cpp"
     "${SRC_DIR}/interface.cpp"
+    "${SRC_DIR}/log.cpp"
 )
+
+# Bodies for the public ConVar/ConCommand classes: hl2sdk ships no tier1.lib, so
+# the real-SDK build supplies them locally (see the file header).
+if(NOT CRASHDIAG_STUB_SDK)
+    list(APPEND CRASHDIAG_SOURCES "${SRC_DIR}/compat/tier1_min.cpp")
+endif()
 
 if(CRASHDIAG_COMPILE_ONLY)
     add_library(crashdiag OBJECT ${CRASHDIAG_SOURCES})
@@ -72,9 +75,7 @@ else()
         "${HL2SDK_PATH}/public"
         "${HL2SDK_PATH}/public/tier0"
         "${HL2SDK_PATH}/public/tier1"
-        "${HL2SDK_PATH}/tier0"
-        "${HL2SDK_PATH}/tier1"
-        "${HL2SDK_PATH}/common")
+        "${HL2SDK_PATH}/public/../common")
 endif()
 
 target_compile_definitions(crashdiag PRIVATE

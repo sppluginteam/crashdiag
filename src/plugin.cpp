@@ -1,6 +1,7 @@
 #include "plugin.h"
 #include "crash_report.h"
 #include "heartbeat.h"
+#include "log.h"
 
 #include <cstring>
 
@@ -73,6 +74,7 @@ bool CCrashDiagPlugin::Load(CreateInterfaceFn interfaceFactory,
     m_pProcess  = reinterpret_cast<IProcessUtils*>(interfaceFactory("VProcessUtils001", &rc));
 #endif
 
+    crashdiag::SetLogEngine(m_pEngine);
     RegisterCommands();
     crashdiag::EnsureLogDirectory(m_cvLogDir.GetString());
     crashdiag::InstallCrashHandler();
@@ -81,9 +83,9 @@ bool CCrashDiagPlugin::Load(CreateInterfaceFn interfaceFactory,
     m_lastFrameQpc = NowSeconds();
     m_lastHeartbeatQpc = m_lastFrameQpc;
 
-    ConMsg("[crashdiag] loaded. logdir=%s engine=%p cvar=%p enabled=%d\n",
-           m_cvLogDir.GetString(), static_cast<void*>(m_pEngine),
-           static_cast<void*>(m_pCvar), m_cvEnabled.GetBool() ? 1 : 0);
+    crashdiag::Log("[crashdiag] loaded. logdir=%s engine=%p cvar=%p enabled=%d\n",
+                   m_cvLogDir.GetString(), static_cast<void*>(m_pEngine),
+                   static_cast<void*>(m_pCvar), m_cvEnabled.GetBool() ? 1 : 0);
     return true;
 }
 
@@ -91,7 +93,7 @@ void CCrashDiagPlugin::Unload()
 {
     crashdiag::RemoveCrashHandler();
     m_loaded = false;
-    ConMsg("[crashdiag] unloaded.\n");
+    crashdiag::Log("[crashdiag] unloaded.\n");
 }
 
 const char* CCrashDiagPlugin::GetPluginDescription()
@@ -203,16 +205,16 @@ void CCrashDiagPlugin::TestCrashCmd(const CCommand& /*args*/)
 
     if (!self.m_cvEnabled.GetBool())
     {
-        ConMsg("[crashdiag] disabled (crashdiag_enabled=0); refusing test crash.\n");
+        crashdiag::Log("[crashdiag] disabled (crashdiag_enabled=0); refusing test crash.\n");
         return;
     }
     if (!self.m_cvEnableTest.GetBool())
     {
-        ConMsg("[crashdiag] set crashdiag_enable_test 1 before using crashdiag_test_crash.\n");
+        crashdiag::Log("[crashdiag] set crashdiag_enable_test 1 before using crashdiag_test_crash.\n");
         return;
     }
 
-    ConMsg("[crashdiag] intentional access violation (null deref) - writing crash log...\n");
+    crashdiag::Log("[crashdiag] intentional access violation (null deref) - writing crash log...\n");
     crashdiag::WriteCrashReport("EXCEPTION_ACCESS_VIOLATION");
 
     // Intentional null dereference to exercise the capture pipeline.
