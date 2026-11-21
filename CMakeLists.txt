@@ -82,11 +82,19 @@ target_compile_definitions(crashdiag PRIVATE
     WIN32_LEAN_AND_MEAN
     NOMINMAX)
 
-# hl2sdk's public/tier0/platform.h reasons about COMPILER_MSVC being pre-defined
-# (its build system used to pass it) and errors out at VALIGNOF without it:
-#   #error "PORT: Code only tested with MSVC! ..."
+# Valve's public headers expect the macros its old VPC build system used to
+# define on the command line. Without them the SDK hits internal #errors:
+#   platform.h     #error "PORT: Code only tested with MSVC!"      (COMPILER_MSVC)
+#   threadtools.h  #error "implement me"                          (COMPILER_MSVC32/64)
+#   threadtools.h  #error "Interlocked functions not defined."     (same)
+# The 32/64 split also drives the PAUSE and interlocked implementations.
 if(MSVC)
     target_compile_definitions(crashdiag PRIVATE COMPILER_MSVC=1)
+    if(CMAKE_SIZEOF_VOID_P EQUAL 8)
+        target_compile_definitions(crashdiag PRIVATE COMPILER_MSVC64=1)
+    else()
+        target_compile_definitions(crashdiag PRIVATE COMPILER_MSVC32=1)
+    endif()
 endif()
 
 if(NOT CRASHDIAG_COMPILE_ONLY)
