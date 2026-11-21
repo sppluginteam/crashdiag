@@ -76,8 +76,11 @@ namespace
         std::fprintf(f, " %s=%.16llx\n", name, (unsigned long long)value);
     }
 
+    // The CONTEXT layout depends on the target: x64 has RIP/RSP/RBP/R8-R15,
+    // Win32 x86 only has EIP/ESP/EBP/EAX-EDI. Both have EFlags.
     void DumpContext(FILE* f, const CONTEXT& ctx)
     {
+#if defined(_WIN64)
         std::fprintf(f, "--- registers (x64) ---\n");
         WriteRegisterLine(f, "RIP", ctx.Rip);
         WriteRegisterLine(f, "RSP", ctx.Rsp);
@@ -96,6 +99,18 @@ namespace
         WriteRegisterLine(f, "R13", ctx.R13);
         WriteRegisterLine(f, "R14", ctx.R14);
         WriteRegisterLine(f, "R15", ctx.R15);
+#else
+        std::fprintf(f, "--- registers (x86) ---\n");
+        WriteRegisterLine(f, "EIP", ctx.Eip);
+        WriteRegisterLine(f, "ESP", ctx.Esp);
+        WriteRegisterLine(f, "EBP", ctx.Ebp);
+        WriteRegisterLine(f, "EAX", ctx.Eax);
+        WriteRegisterLine(f, "EBX", ctx.Ebx);
+        WriteRegisterLine(f, "ECX", ctx.Ecx);
+        WriteRegisterLine(f, "EDX", ctx.Edx);
+        WriteRegisterLine(f, "ESI", ctx.Esi);
+        WriteRegisterLine(f, "EDI", ctx.Edi);
+#endif
         std::fprintf(f, " EFL=%.16x\n", (unsigned)ctx.EFlags);
     }
 
@@ -105,7 +120,19 @@ namespace
     {
         std::fprintf(f, "--- call stack ---\n");
 
-        if (ctx.Rsp == 0)
+#if defined(_WIN64)
+        const DWORD machine = IMAGE_FILE_MACHINE_AMD64;
+        const ULONG64 pc    = ctx.Rip;
+        const ULONG64 sp    = ctx.Rsp;
+        const ULONG64 fp    = ctx.Rbp;
+#else
+        const DWORD machine = IMAGE_FILE_MACHINE_I386;
+        const ULONG64 pc    = ctx.Eip;
+        const ULONG64 sp    = ctx.Esp;
+        const ULONG64 fp    = ctx.Ebp;
+#endif
+
+        if (sp == 0)
         {
             std::fprintf(f, " (stack overflow: skipped unwinding to avoid consuming the guard page)\n");
             return;
@@ -113,11 +140,11 @@ namespace
 
         STACKFRAME64 frame;
         std::memset(&frame, 0, sizeof(frame));
-        frame.AddrPC.Offset    = ctx.Rip;
+        frame.AddrPC.Offset    = pc;
         frame.AddrPC.Mode      = AddrModeFlat;
-        frame.AddrStack.Offset = ctx.Rsp;
+        frame.AddrStack.Offset = sp;
         frame.AddrStack.Mode    = AddrModeFlat;
-        frame.AddrFrame.Offset  = ctx.Rbp;
+        frame.AddrFrame.Offset  = fp;
         frame.AddrFrame.Mode    = AddrModeFlat;
 
         SymSetOptions(SYMOPT_LOAD_LINES | SYMOPT_UNDNAME);
@@ -125,7 +152,7 @@ namespace
 
         for (int depth = 0; depth < 64; ++depth)
         {
-            BOOL ok = StackWalk64(IMAGE_FILE_MACHINE_AMD64, process,
+            BOOL ok = StackWalk64(machine, process,
                                   GetCurrentThread(), &frame, &ctx,
                                   nullptr, SymFunctionTableAccess64,
                                   SymGetModuleBase64, nullptr);
@@ -297,8 +324,8 @@ namespace
                                     dumpPath.c_str(), ptrs);
 
         // Register / stack sections need the live CONTEXT.
-        CrashDiagSnapshot snap = CurrentSnapshot();
-        (void)snap;
+        if (ptrs->ContextRecord)
+            DumpContext(nullptr, *ptrs->ContextRecord);
 
         if (!dumped)
         {

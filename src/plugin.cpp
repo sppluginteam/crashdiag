@@ -67,7 +67,9 @@ bool CCrashDiagPlugin::Load(CreateInterfaceFn interfaceFactory,
     int rc = 0;
     m_pEngine   = reinterpret_cast<IVEngineServer*>(interfaceFactory("VEngineServer023", &rc));
     m_pCvar     = reinterpret_cast<ICvar*>(interfaceFactory("VEngineCvar004", &rc));
+#ifdef CRASHDIAG_STUB_SDK
     m_pProcess  = reinterpret_cast<IProcessUtils*>(interfaceFactory("VProcessUtils001", &rc));
+#endif
 
     RegisterCommands();
     crashdiag::EnsureLogDirectory(m_cvLogDir.GetString());
@@ -98,38 +100,34 @@ const char* CCrashDiagPlugin::GetPluginDescription()
 void CCrashDiagPlugin::BuildSnapshot(CrashDiagSnapshot& snap)
 {
     snap = CrashDiagSnapshot{};
-    if (m_pEngine)
-    {
-        const char* map = m_pEngine->GetMapName();
-        if (map) std::strncpy(snap.mapName, map, sizeof(snap.mapName) - 1);
-        snap.players = m_pEngine->GetPlayerCount();
-        snap.ticks   = m_pEngine->GetTickCount();
-    }
-    else
-    {
-        std::strncpy(snap.mapName, m_mapName, sizeof(snap.mapName) - 1);
-        snap.players = m_players;
-    }
+    // Everything below is tracked by the plugin itself: IVEngineServer in this
+    // SDK revision exposes neither GetMapName/GetPlayerCount nor a tick query.
+    std::strncpy(snap.mapName, m_mapName, sizeof(snap.mapName) - 1);
+    snap.players    = m_players;
+    snap.ticks      = static_cast<int>(m_ticks);
     snap.avgFrameMs = m_avgFrameMs;
     snap.wsMB       = crashdiag::CurrentWorkingSetMB();
     snap.counters   = m_counters;
 }
 
-void CCrashDiagPlugin::LevelInit(const char* pchMapName)
+void CCrashDiagPlugin::LevelInit(char const* pMapName)
 {
     ++m_counters.lvInit;
-    if (pchMapName) std::strncpy(m_mapName, pchMapName, sizeof(m_mapName) - 1);
+    m_players = 0;
+    m_ticks = 0;
+    if (pMapName) std::strncpy(m_mapName, pMapName, sizeof(m_mapName) - 1);
 }
 
 void CCrashDiagPlugin::ServerActivate(edict_t* /*pEdictList*/, int /*edictCount*/,
-                                      int clientMax)
+                                      int /*clientMax*/)
 {
-    m_players = clientMax;
 }
 
 void CCrashDiagPlugin::GameFrame(bool /*simulating*/)
 {
     if (!m_loaded) return;
+
+    ++m_ticks;
 
     double now = NowSeconds();
     if (m_lastFrameQpc > 0.0)
@@ -158,10 +156,11 @@ void CCrashDiagPlugin::LevelShutdown()
     ++m_counters.lvShut;
 }
 
-void CCrashDiagPlugin::ClientConnect(edict_t* /*pEntity*/, const char* /*pszName*/,
-                                    const char* /*pszAddress*/, char* /*reject*/,
-                                    int /*maxrejectlen*/)
+PLUGIN_RESULT CCrashDiagPlugin::ClientConnect(bool* /*bAllowConnect*/, edict_t* /*pEntity*/,
+                                             const char* /*pszName*/, const char* /*pszAddress*/,
+                                             char* /*reject*/, int /*maxrejectlen*/)
 {
+    return PLUGIN_CONTINUE;
 }
 
 void CCrashDiagPlugin::ClientActive(edict_t* /*pEntity*/)
@@ -180,24 +179,20 @@ void CCrashDiagPlugin::ClientPutInServer(edict_t* /*pEntity*/, char const* /*pla
 {
 }
 
-void CCrashDiagPlugin::ClientCommand(edict_t* /*pEntity*/, const CCommand& /*args*/)
+PLUGIN_RESULT CCrashDiagPlugin::ClientCommand(edict_t* /*pEntity*/, const CCommand& /*args*/)
 {
     ++m_counters.esCmds;
+    return PLUGIN_CONTINUE;
 }
 
 void CCrashDiagPlugin::ClientSettingsChanged(edict_t* /*pEdict*/)
 {
 }
 
-bool CCrashDiagPlugin::ProcessQueryCvarValue(edict_t* /*pEntity*/,
-    const char* /*pCvarName*/, int /*queryID*/, const char* /*pCvarValue*/)
+PLUGIN_RESULT CCrashDiagPlugin::NetworkIDValidated(const char* /*pszName*/,
+                                                  const char* /*pszNetworkID*/)
 {
-    return false;
-}
-
-void CCrashDiagPlugin::NetworkIDValidated(const char* /*pszName*/,
-                                          const char* /*pszNetworkID*/)
-{
+    return PLUGIN_CONTINUE;
 }
 
 void CCrashDiagPlugin::TestCrashCmd(const CCommand& /*args*/)

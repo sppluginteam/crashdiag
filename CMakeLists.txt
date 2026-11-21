@@ -51,6 +51,7 @@ else()
             "Non-stub build needs -DHL2SDK_PATH=<path to hl2sdk public/ tree>.")
     endif()
     target_include_directories(crashdiag PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}"
         "${SRC_DIR}"
         "${HL2SDK_PATH}/public"
         "${HL2SDK_PATH}/public/tier0"
@@ -64,6 +65,13 @@ target_compile_definitions(crashdiag PRIVATE
     _CRT_SECURE_NO_WARNINGS
     WIN32_LEAN_AND_MEAN
     NOMINMAX)
+
+# hl2sdk's public/tier0/platform.h reasons about COMPILER_MSVC being pre-defined
+# (its build system used to pass it) and errors out at VALIGNOF without it:
+#   #error "PORT: Code only tested with MSVC! ..."
+if(MSVC)
+    target_compile_definitions(crashdiag PRIVATE COMPILER_MSVC=1)
+endif()
 
 if(WIN32)
     target_link_libraries(crashdiag PRIVATE dbghelp psapi)
