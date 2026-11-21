@@ -1,11 +1,22 @@
-// DLL entry points: the engine-facing CreateInterface factory, the interface
-// registration list, and the exported `cvar` global.
+// DLL entry points.
 //
 // The compiled binary exports two symbols:
 //   CreateInterface              - standard Source interface factory
 //   cvar                         - ICvar pointer filled/used by the engine
 //
 // The plugin advertises itself under ISERVERPLUGINCALLBACKS003.
+//
+// Two registration paths are required, because the stub SDK and a real HL2SDK
+// model interface registration differently:
+//
+//   * stub SDK  - this file owns the registry list and the exported
+//                 CreateInterface() implementation, so CI can link a real .so.
+//   * HL2SDK    - public/tier1/interface.h defines InterfaceReg with a
+//                 constructor that link-lists the entry into
+//                 InterfaceReg::s_pInterfaceRegs, and the engine's tier1 library
+//                 provides CreateInterface(). Defining our own here would clash
+//                 (LNK2005) with the engine factory, so only a static
+//                 InterfaceReg is emitted.
 
 #include "plugin.h"
 
@@ -16,18 +27,23 @@
 #define IFACE_FAILED 1
 #endif
 
-InterfaceReg* g_pInterfaceRegs = nullptr;
-
 // Exported engine cvar interface (resolved by the engine / plugin).
 ICvar* cvar = nullptr;
 
-static void* CreateCrashDiagPlugin(const char* /*pName*/, int* /*pReturnCode*/)
+static void* CreateCrashDiagPluginInstance()
 {
     return &CCrashDiagPlugin::Instance();
 }
 
-// Register our single interface. Linked ahead of DllMain so the list head is
-// valid before CreateInterface is first called.
+#ifdef CRASHDIAG_STUB_SDK
+
+InterfaceReg* g_pInterfaceRegs = nullptr;
+
+static void* CreateCrashDiagPlugin(const char* /*pName*/, int* /*pReturnCode*/)
+{
+    return CreateCrashDiagPluginInstance();
+}
+
 static InterfaceReg s_crashDiagReg = {
     &CreateCrashDiagPlugin,
     "ISERVERPLUGINCALLBACKS003",
@@ -74,3 +90,12 @@ namespace
     static AutoRegister s_autoRegister;
 }
 #endif
+
+#else // real HL2SDK
+
+// HL2SDK's InterfaceReg constructor takes an InstantiateInterfaceFn, i.e. a
+// function WITH NO ARGUMENTS, and registers itself with the SDK's global list.
+static InterfaceReg s_crashDiagReg(&CreateCrashDiagPluginInstance,
+                                  "ISERVERPLUGINCALLBACKS003");
+
+#endif // CRASHDIAG_STUB_SDK

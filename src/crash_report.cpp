@@ -99,7 +99,9 @@ namespace
         std::fprintf(f, " EFL=%.16x\n", (unsigned)ctx.EFlags);
     }
 
-    void DumpCallStack(FILE* f, const CONTEXT& ctx, HANDLE process)
+    // StackWalk64 takes a non-const PVOID ContextRecord; the caller passes the
+    // CONTEXT out of EXCEPTION_POINTERS, which is mutable in practice.
+    void DumpCallStack(FILE* f, CONTEXT& ctx, HANDLE process)
     {
         std::fprintf(f, "--- call stack ---\n");
 
@@ -166,8 +168,10 @@ namespace
         }
     }
 
+    // MINIDUMP_EXCEPTION_INFORMATION::ExceptionPointers is a non-const
+    // PEXCEPTION_POINTERS, so the parameter must not be const-qualified.
     bool WriteMiniDump(HANDLE process, DWORD pid, const char* path,
-                       const EXCEPTION_POINTERS* ptrs)
+                       EXCEPTION_POINTERS* ptrs)
     {
         HANDLE file = CreateFileA(path, GENERIC_WRITE, 0, nullptr,
                                   CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);

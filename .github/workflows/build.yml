@@ -53,15 +53,18 @@ jobs:
   #
   # Best-effort: the plugin was reconstructed from a compiled binary, so the
   # real hl2sdk-dods headers / ABI may differ from the stub signatures.
-  # This job is allowed to fail without breaking the stub check above; its
-  # purpose is to surface exactly which header/ABI mismatches remain.
+  #
+  # Pinned to windows-2022: hl2sdk-dods (Source SDK 2013 era) hits
+  # public/tier0/platform.h's "PORT: Code only tested with MSVC" #error on the
+  # newer VS2026 toolset that windows-latest now ships (MSVC 19.52). VS2022's
+  # 19.4x toolset is inside the range that header accepts.
   #
   # NOTE: job ids must not contain hyphens here - `needs.<id>.result` with a
   # hyphen is not a valid expression and makes the whole workflow file invalid.
   # ---------------------------------------------------------------------------
   dods:
     name: Attempt DoDS SDK build (Windows x64)
-    runs-on: windows-latest
+    runs-on: windows-2022
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
