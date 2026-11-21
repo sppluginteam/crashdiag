@@ -49,7 +49,11 @@ jobs:
           nm -D --defined-only build/libcrashdiag.so | grep -E ' T CreateInterface$| B cvar$'
 
   # ---------------------------------------------------------------------------
-  # Attempt a real DoDS (Day of Defeat: Source) SDK build.
+  # Attempt real DoDS (Day of Defeat: Source) SDK builds, Win32 x86 and x64.
+  #
+  # 32-bit and 64-bit are separate binaries by necessity: a PE file records one
+  # machine type, so srcds.exe (32-bit) and srcds_win64.exe (64-bit) each need
+  # their own crashdiag.dll.
   #
   # Best-effort: the plugin was reconstructed from a compiled binary, so the
   # real hl2sdk-dods headers / ABI may differ from the stub signatures.
@@ -63,9 +67,13 @@ jobs:
   # hyphen is not a valid expression and makes the whole workflow file invalid.
   # ---------------------------------------------------------------------------
   dods:
-    name: Attempt DoDS SDK build (Windows x64)
+    name: DoDS SDK build (Windows ${{ matrix.arch }})
     runs-on: windows-2022
     continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [32, 64]
     steps:
       - uses: actions/checkout@v5
 
@@ -80,14 +88,26 @@ jobs:
 
       - name: Build against hl2sdk-dods
         shell: cmd
-        run: build.bat --sdk-path deps\hl2sdk-dods
+        run: build.bat --sdk-path deps\hl2sdk-dods --arch ${{ matrix.arch }}
+
+      - name: Show binary machine type
+        shell: pwsh
+        run: |
+          # Confirms the artifact really is the architecture we asked for.
+          $dll = Get-ChildItem -Recurse -Filter *.dll "build-win${{ matrix.arch }}" | Select-Object -First 1
+          if (-not $dll) { throw "no .dll produced" }
+          $bytes = [System.IO.File]::ReadAllBytes($dll.FullName)
+          $offset = [BitConverter]::ToInt32($bytes, 0x3C)
+          $machine = [BitConverter]::ToUInt16($bytes, $offset + 4)
+          $name = switch ($machine) { 0x014c { 'i386 (32-bit)' } 0x8664 { 'AMD64 (64-bit)' } default { "0x$('{0:X4}' -f $machine)" } }
+          Write-Host "$($dll.Name): $name"
 
       - name: Upload DoDS artifacts (if any)
         if: success()
         uses: actions/upload-artifact@v5
         with:
-          name: dods-win64
-          path: build-win64/**/*.dll
+          name: dods-win${{ matrix.arch }}
+          path: build-win${{ matrix.arch }}/**/*.dll
 
   # ---------------------------------------------------------------------------
   # Diagnostics: always report which jobs succeeded or failed.
@@ -108,6 +128,6 @@ jobs:
             exit 1
           fi
           if [ "${{ needs.dods.result }}" != "success" ]; then
-            echo "::warning::DoDS real-SDK build did not succeed. This job is best-effort;"
-            echo "            inspect the dods log for header/ABI mismatches."
+            echo "::warning::One or both DoDS builds did not succeed. This job is best-effort;"
+            echo "            inspect the failed matrix leg for header/ABI mismatches."
           fi
