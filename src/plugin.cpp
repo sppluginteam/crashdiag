@@ -53,11 +53,13 @@ void CCrashDiagPlugin::RegisterCommands()
 {
     if (m_pCvar)
     {
-        m_pCvar->RegisterConCommandBase(&m_cvEnabled);
-        m_pCvar->RegisterConCommandBase(&m_cvLogDir);
-        m_pCvar->RegisterConCommandBase(&m_cvInterval);
-        m_pCvar->RegisterConCommandBase(&m_cvEnableTest);
-        m_pCvar->RegisterConCommandBase(&m_cmdTestCrash);
+        // The dods ICvar names this RegisterConCommand (not
+        // RegisterConCommandBase, which only exists on IConCommandBaseAccessor).
+        m_pCvar->RegisterConCommand(&m_cvEnabled);
+        m_pCvar->RegisterConCommand(&m_cvLogDir);
+        m_pCvar->RegisterConCommand(&m_cvInterval);
+        m_pCvar->RegisterConCommand(&m_cvEnableTest);
+        m_pCvar->RegisterConCommand(&m_cmdTestCrash);
     }
 }
 

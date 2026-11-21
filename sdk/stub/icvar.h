@@ -1,5 +1,5 @@
 // Reconstructed stub of icvar.h / convar classes.
-// Real HL2SDK: public/icvar.h, public/convar.h, public/command.h.
+// Real HL2SDK: public/icvar.h, public/tier1/convar.h.
 
 #ifndef CRASHDIAG_STUB_ICVAR_H
 #define CRASHDIAG_STUB_ICVAR_H
@@ -97,10 +97,12 @@ private:
 };
 
 // ICvar interface (subset). Real HL2SDK: public/icvar.h.
+// Registration is RegisterConCommand in the real dods ICvar as well.
 class ICvar
 {
 public:
-    virtual void RegisterConCommandBase(ConCommandBase* pCommand) = 0;
+    virtual void RegisterConCommand(ConCommandBase* pCommand) = 0;
+    virtual void UnregisterConCommand(ConCommandBase* pCommand) = 0;
     virtual ConVar* FindVar(const char* pName) = 0;
 };
 
