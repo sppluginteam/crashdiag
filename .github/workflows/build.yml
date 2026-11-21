@@ -86,8 +86,26 @@ jobs:
           }
 
       - name: Compile against hl2sdk-dods
+        id: build
+        continue-on-error: true
         shell: cmd
-        run: build.bat --sdk-path deps\hl2sdk-dods --arch ${{ matrix.arch }} --compile-only
+        run: build.bat --sdk-path deps\hl2sdk-dods --arch ${{ matrix.arch }} --compile-only > build.log 2>&1
+
+      # MSBuild diagnostics otherwise stay in the job log, which cannot be read
+      # without repo credentials. Re-emit each one as a workflow error so the
+      # failure is visible in the public checks API and on the run summary.
+      - name: Surface compiler diagnostics
+        if: steps.build.outcome != 'success'
+        shell: pwsh
+        run: |
+          $log = Get-Content build.log
+          $diag = $log | Select-String -Pattern 'error (C|LNK)\d+' | Select-Object -First 30
+          foreach ($d in $diag) { Write-Host "::error::$($d.Line.Trim())" }
+          if (-not $diag) {
+            Write-Host "::error::build failed without a C####/LNK#### diagnostic; tail follows"
+            $log | Select-Object -Last 25 | ForEach-Object { Write-Host $_ }
+          }
+          exit 1
 
       - name: Report object files
         shell: bash
