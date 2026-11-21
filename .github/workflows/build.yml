@@ -31,7 +31,7 @@ jobs:
       - name: Type-check all sources
         run: |
           set -e
-          for f in src/plugin.cpp src/crash_report.cpp src/heartbeat.cpp src/interface.cpp; do
+          for f in src/plugin.cpp src/crash_report.cpp src/heartbeat.cpp src/interface.cpp src/log.cpp; do
             echo "== $f"
             g++ -std=c++17 -fsyntax-only -Wall -Wextra \
               -DCRASHDIAG_STUB_SDK -I src -I sdk/stub "$f"
@@ -49,13 +49,16 @@ jobs:
           nm -D --defined-only build/libcrashdiag.so | grep -E ' T CreateInterface$| B cvar$'
 
   # ---------------------------------------------------------------------------
-  # Real DoDS (Day of Defeat: Source) SDK header check, Win32 x86 and x64.
+  # Real DoDS (Day of Defeat: Source) build, Win32 x86 and x64 - produces the
+  # loadable crashdiag.dll for each architecture.
   #
-  # COMPILE-ONLY by design. hl2sdk ships headers only: tier0.lib / tier1.lib
-  # (ConMsg, Warning, Error, CommandLine_Tier0 ...) are not in the repo and must
-  # be built separately the way SourceMod does. Linking against the SDK alone
-  # therefore always ends in LNK2019, so this job verifies header/ABI
-  # compatibility and leaves binary production to a build with real libs.
+  # hl2sdk ships headers only: tier0.lib (ConMsg, Warning, Error ...) and tier1.lib
+  # (ConVar/ConCommand/InterfaceReg bodies) do not exist there. So the plugin does
+  # not depend on either library: it keeps its own interface factory, supplies
+  # layout-faithful ConVar/ConCommand bodies (src/compat/tier1_min.cpp), and logs
+  # through IVEngineServer::LogPrint instead of ConMsg. Nothing else is linked
+  # except the OS libraries dbghelp/psapi, which is what makes a real link possible
+  # in CI.
   #
   # 32-bit and 64-bit are separate compilations by necessity: the CONTEXT
   # layout and STACKFRAME64 machine type differ, and a single .dll cannot
@@ -66,7 +69,7 @@ jobs:
   # is not a valid expression and invalidates the whole workflow file.
   # ---------------------------------------------------------------------------
   dods:
-    name: DoDS SDK header check (Windows ${{ matrix.arch }})
+    name: DoDS build (Windows ${{ matrix.arch }})
     runs-on: windows-2022
     strategy:
       fail-fast: false
@@ -84,11 +87,11 @@ jobs:
             throw "public/eiface.h not found - SDK layout changed"
           }
 
-      - name: Compile against hl2sdk-dods
+      - name: Build crashdiag.dll against hl2sdk-dods
         id: build
         continue-on-error: true
         shell: cmd
-        run: build.bat --sdk-path deps\hl2sdk-dods --arch ${{ matrix.arch }} --compile-only > build.log 2>&1
+        run: build.bat --sdk-path deps\hl2sdk-dods --arch ${{ matrix.arch }} > build.log 2>&1
 
       # MSBuild diagnostics otherwise stay in the job log, which cannot be read
       # without repo credentials. Re-emit each one as a workflow error so the
@@ -106,13 +109,25 @@ jobs:
           }
           exit 1
 
-      - name: Report object files
-        shell: bash
+      - name: Verify PE machine type
+        shell: pwsh
         run: |
-          set -e
-          n=$(find build-win${{ matrix.arch }} -name '*.obj' | wc -l)
-          echo "compiled objects: $n"
-          test "$n" -gt 0
+          $dll = Get-ChildItem -Path "build-win${{ matrix.arch }}" -Filter crashdiag.dll -Recurse | Select-Object -First 1
+          if (-not $dll) { throw "crashdiag.dll not produced" }
+          Write-Host "artifact: $($dll.FullName) ($($dll.Length) bytes)"
+          $bytes = [System.IO.File]::ReadAllBytes($dll.FullName)
+          $peOffset = [BitConverter]::ToInt32($bytes, 0x3C)
+          $machine = [BitConverter]::ToUInt16($bytes, $peOffset + 4)
+          $expected = if ("${{ matrix.arch }}" -eq "32") { 0x014c } else { 0x8664 }
+          Write-Host ("machine = 0x{0:x4} (expected 0x{1:x4})" -f $machine, $expected)
+          if ($machine -ne $expected) { throw "PE machine mismatch" }
+
+      - name: Upload DLL
+        uses: actions/upload-artifact@v5
+        with:
+          name: crashdiag-dods-win${{ matrix.arch }}
+          path: build-win${{ matrix.arch }}/**/crashdiag.dll
+          if-no-files-found: error
 
   # ---------------------------------------------------------------------------
   # Diagnostics: always report which jobs succeeded or failed.
@@ -133,6 +148,6 @@ jobs:
             exit 1
           fi
           if [ "${{ needs.dods.result }}" != "success" ]; then
-            echo "::error::One or both DoDS header checks failed - see the diagnostics annotation on the failed matrix leg."
+            echo "::error::One or both DoDS build legs failed - see the diagnostics annotation on the failed matrix leg."
             exit 1
           fi
