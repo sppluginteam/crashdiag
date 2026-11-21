@@ -1,5 +1,8 @@
 // Reconstructed stub of eiface.h (IServerPluginCallbacks).
 // Real HL2SDK: public/eiface.h. The binary exports ISERVERPLUGINCALLBACKS003.
+//
+// The vtable order below mirrors SDK 2013 revision 003 exactly, so the stub
+// build exercises the same declaration shape the real SDK build uses.
 
 #ifndef CRASHDIAG_STUB_EIFACE_H
 #define CRASHDIAG_STUB_EIFACE_H
@@ -8,6 +11,15 @@
 
 struct edict_t;
 class CCommand;
+
+// PLUGIN_RESULT lives in eiface.h in the real SDK; every callback that can
+// steer the engine returns it.
+enum PLUGIN_RESULT
+{
+    PLUGIN_CONTINUE = 0,
+    PLUGIN_OVERRIDE,
+    PLUGIN_STOP
+};
 
 abstract_class IServerPluginCallbacks
 {
@@ -28,18 +40,17 @@ public:
     virtual void LevelShutdown() = 0;
 
     // Client lifecycle.
-    virtual void ClientConnect(edict_t* pEntity, const char* pszName,
-                               const char* pszAddress, char* reject, int maxrejectlen) = 0;
     virtual void ClientActive(edict_t* pEntity) = 0;
     virtual void ClientDisconnect(edict_t* pEntity) = 0;
     virtual void ClientPutInServer(edict_t* pEntity, char const* playername) = 0;
-    virtual void ClientCommand(edict_t* pEntity, const CCommand& args) = 0;
+    virtual void SetCommandClient(int index) = 0;
     virtual void ClientSettingsChanged(edict_t* pEdict) = 0;
-
-    // Cvar query / SteamID validation hooks (present in newer interface revisions).
-    virtual bool ProcessQueryCvarValue(edict_t* pEntity, const char* pCvarName,
-                                       int queryID, const char* pCvarValue) = 0;
-    virtual void NetworkIDValidated(const char* pszName, const char* pszNetworkID) = 0;
+    virtual PLUGIN_RESULT ClientConnect(bool* bAllowConnect, edict_t* pEntity,
+                                        const char* pszName, const char* pszAddress,
+                                        char* reject, int maxrejectlen) = 0;
+    virtual PLUGIN_RESULT ClientCommand(edict_t* pEntity, const CCommand& args) = 0;
+    virtual PLUGIN_RESULT NetworkIDValidated(const char* pszName,
+                                             const char* pszNetworkID) = 0;
 };
 
 #endif // CRASHDIAG_STUB_EIFACE_H
