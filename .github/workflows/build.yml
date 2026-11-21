@@ -13,7 +13,9 @@ permissions:
 
 jobs:
   # ---------------------------------------------------------------------------
-  # Fast type-check against the bundled stub SDK. Needs no engine SDK checkout.
+  # Stub SDK build: type-check + link a real shared object. This is the job that
+  # proves the reconstructed sources compile; its binary is NOT loadable by a
+  # real srcds (the stub SDK fakes tier0/ConVar).
   # ---------------------------------------------------------------------------
   lint:
     name: Syntax check (stub SDK)
@@ -44,30 +46,27 @@ jobs:
       - name: Verify exported entry points
         run: |
           set -e
-          # The engine loads the plugin through CreateInterface; cvar is the
-          # exported ICvar pointer seen in the recovered binary.
           nm -D --defined-only build/libcrashdiag.so | grep -E ' T CreateInterface$| B cvar$'
 
   # ---------------------------------------------------------------------------
-  # Attempt real DoDS (Day of Defeat: Source) SDK builds, Win32 x86 and x64.
+  # Real DoDS (Day of Defeat: Source) SDK header check, Win32 x86 and x64.
   #
-  # 32-bit and 64-bit are separate binaries by necessity: a PE file records one
-  # machine type, so srcds.exe (32-bit) and srcds_win64.exe (64-bit) each need
-  # their own crashdiag.dll.
+  # COMPILE-ONLY by design. hl2sdk ships headers only: tier0.lib / tier1.lib
+  # (ConMsg, Warning, Error, CommandLine_Tier0 ...) are not in the repo and must
+  # be built separately the way SourceMod does. Linking against the SDK alone
+  # therefore always ends in LNK2019, so this job verifies header/ABI
+  # compatibility and leaves binary production to a build with real libs.
   #
-  # Best-effort: the plugin was reconstructed from a compiled binary, so the
-  # real hl2sdk-dods headers / ABI may differ from the stub signatures.
+  # 32-bit and 64-bit are separate compilations by necessity: the CONTEXT
+  # layout and STACKFRAME64 machine type differ, and a single .dll cannot
+  # serve both srcds.exe and srcds_win64.exe.
   #
-  # Pinned to windows-2022: hl2sdk-dods (Source SDK 2013 era) hits
-  # public/tier0/platform.h's "PORT: Code only tested with MSVC" #error on the
-  # newer VS2026 toolset that windows-latest now ships (MSVC 19.52). VS2022's
-  # 19.4x toolset is inside the range that header accepts.
-  #
-  # NOTE: job ids must not contain hyphens here - `needs.<id>.result` with a
-  # hyphen is not a valid expression and makes the whole workflow file invalid.
+  # Pinned to windows-2022 for a stable MSVC toolset.
+  # NOTE: job ids must not contain hyphens - `needs.<id>.result` with a hyphen
+  # is not a valid expression and invalidates the whole workflow file.
   # ---------------------------------------------------------------------------
   dods:
-    name: DoDS SDK build (Windows ${{ matrix.arch }})
+    name: DoDS SDK header check (Windows ${{ matrix.arch }})
     runs-on: windows-2022
     continue-on-error: true
     strategy:
@@ -83,31 +82,20 @@ jobs:
           if (Test-Path deps/hl2sdk-dods/public/eiface.h) {
             Write-Host "SDK headers present."
           } else {
-            Write-Warning "public/eiface.h not found; SDK layout may differ."
+            throw "public/eiface.h not found - SDK layout changed"
           }
 
-      - name: Build against hl2sdk-dods
+      - name: Compile against hl2sdk-dods
         shell: cmd
-        run: build.bat --sdk-path deps\hl2sdk-dods --arch ${{ matrix.arch }}
+        run: build.bat --sdk-path deps\hl2sdk-dods --arch ${{ matrix.arch }} --compile-only
 
-      - name: Show binary machine type
-        shell: pwsh
+      - name: Report object files
+        shell: bash
         run: |
-          # Confirms the artifact really is the architecture we asked for.
-          $dll = Get-ChildItem -Recurse -Filter *.dll "build-win${{ matrix.arch }}" | Select-Object -First 1
-          if (-not $dll) { throw "no .dll produced" }
-          $bytes = [System.IO.File]::ReadAllBytes($dll.FullName)
-          $offset = [BitConverter]::ToInt32($bytes, 0x3C)
-          $machine = [BitConverter]::ToUInt16($bytes, $offset + 4)
-          $name = switch ($machine) { 0x014c { 'i386 (32-bit)' } 0x8664 { 'AMD64 (64-bit)' } default { "0x$('{0:X4}' -f $machine)" } }
-          Write-Host "$($dll.Name): $name"
-
-      - name: Upload DoDS artifacts (if any)
-        if: success()
-        uses: actions/upload-artifact@v5
-        with:
-          name: dods-win${{ matrix.arch }}
-          path: build-win${{ matrix.arch }}/**/*.dll
+          set -e
+          n=$(find build-win${{ matrix.arch }} -name '*.obj' | wc -l)
+          echo "compiled objects: $n"
+          test "$n" -gt 0
 
   # ---------------------------------------------------------------------------
   # Diagnostics: always report which jobs succeeded or failed.
@@ -128,6 +116,6 @@ jobs:
             exit 1
           fi
           if [ "${{ needs.dods.result }}" != "success" ]; then
-            echo "::warning::One or both DoDS builds did not succeed. This job is best-effort;"
+            echo "::warning::One or both DoDS header checks failed. This job is best-effort;"
             echo "            inspect the failed matrix leg for header/ABI mismatches."
           fi

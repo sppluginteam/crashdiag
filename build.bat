@@ -4,7 +4,8 @@ REM crashdiag - one-shot Windows build.
 REM
 REM   build.bat                            stub SDK build, x64 (sdk\stub\)
 REM   build.bat --arch 32                  stub SDK build, Win32 x86
-REM   build.bat --sdk-path DIR --arch 32   real HL2SDK, Win32 x86
+REM   build.bat --sdk-path DIR --arch 32   real HL2SDK header check, Win32 x86
+REM   build.bat --compile-only             object library only, no link
 REM   build.bat --clone-dods               clone hl2sdk-dods into deps\ first
 REM
 REM Run from a normal shell; CMake locates MSVC automatically.
@@ -27,6 +28,7 @@ pushd "%SCRIPT_DIR%"
 set "DEPS_DIR=%SCRIPT_DIR%\deps"
 set "SDK_PATH=%HL2SDK_PATH%"
 set "ARCH=64"
+set "COMPILE_ONLY=0"
 set "CLONE_DODS=0"
 set "SKIP_CLONE=0"
 
@@ -34,9 +36,10 @@ set "SKIP_CLONE=0"
 if "%~1"=="" goto :afterparse
 if /i "%~1"=="--sdk-path" (set "SDK_PATH=%~2"& shift& shift& goto :parse)
 if /i "%~1"=="--arch" (set "ARCH=%~2"& shift& shift& goto :parse)
+if /i "%~1"=="--compile-only" (set "COMPILE_ONLY=1"& shift& goto :parse)
 if /i "%~1"=="--clone-dods" (set "CLONE_DODS=1"& shift& goto :parse)
 if /i "%~1"=="--no-clone" (set "SKIP_CLONE=1"& shift& goto :parse)
-if /i "%~1"=="-h" (echo Usage: build.bat [--arch 32^|64] [--sdk-path DIR^|--clone-dods^|--no-clone]& exit /b 0)
+if /i "%~1"=="-h" (echo Usage: build.bat [--arch 32^|64] [--compile-only] [--sdk-path DIR^|--clone-dods^|--no-clone]& exit /b 0)
 echo unknown option: %~1
 exit /b 1
 :afterparse
@@ -62,7 +65,7 @@ if not defined SDK_PATH if "%CLONE_DODS%"=="1" call :clone_dods
 if defined SDK_PATH goto :realbuild
 echo ==^> stub SDK build ^(sdk\stub\^), arch %ARCH%
 set "EXTRA=-DCRASHDIAG_STUB_SDK=ON"
-goto :configure
+goto :arch_options
 
 :realbuild
 if not exist "%SDK_PATH%\public\eiface.h" (
@@ -71,6 +74,12 @@ if not exist "%SDK_PATH%\public\eiface.h" (
 )
 echo ==^> real HL2SDK build: %SDK_PATH% ^(arch %ARCH%^)
 set "EXTRA=-DCRASHDIAG_STUB_SDK=OFF -DHL2SDK_PATH=%SDK_PATH%"
+
+:arch_options
+if "%COMPILE_ONLY%"=="1" (
+    echo ==^> compile-only ^(object library, no link^)
+    set "EXTRA=%EXTRA% -DCRASHDIAG_COMPILE_ONLY=ON"
+)
 goto :configure
 
 REM --- Real SDK resolution (only reached with --clone-dods) ---------------------
@@ -99,8 +108,13 @@ cmake --build "%BUILD_DIR%" --config Release
 if errorlevel 1 exit /b 1
 
 echo.
-echo ==^> build complete. Artifacts:
-dir /s /b "%BUILD_DIR%\*.dll" 2>nul || verify >nul
+if "%COMPILE_ONLY%"=="1" (
+    echo ==^> compile-only: objects produced, no DLL linked:
+    dir /s /b "%BUILD_DIR%\*.obj" 2>nul || verify >nul
+) else (
+    echo ==^> build complete. Artifacts:
+    dir /s /b "%BUILD_DIR%\*.dll" 2>nul || verify >nul
+)
 
 popd
 endlocal
