@@ -19,7 +19,7 @@ jobs:
     name: Syntax check (stub SDK)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install build tools
         run: |
@@ -67,7 +67,7 @@ jobs:
     runs-on: windows-2022
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Clone hl2sdk-dods (alliedmodders/hl2sdk, branch dods)
         run: |
@@ -84,7 +84,7 @@ jobs:
 
       - name: Upload DoDS artifacts (if any)
         if: success()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: dods-win64
           path: build-win64/**/*.dll
