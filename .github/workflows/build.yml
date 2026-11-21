@@ -51,12 +51,15 @@ jobs:
   # ---------------------------------------------------------------------------
   # Attempt a real DoDS (Day of Defeat: Source) SDK build.
   #
-  # This is best-effort: the plugin was reconstructed from a compiled binary,
-  # and the real hl2sdk-dods headers / ABI may differ from the stub signatures.
-  # The job is allowed to fail without breaking the stub type-check above; its
+  # Best-effort: the plugin was reconstructed from a compiled binary, so the
+  # real hl2sdk-dods headers / ABI may differ from the stub signatures.
+  # This job is allowed to fail without breaking the stub check above; its
   # purpose is to surface exactly which header/ABI mismatches remain.
+  #
+  # NOTE: job ids must not contain hyphens here - `needs.<id>.result` with a
+  # hyphen is not a valid expression and makes the whole workflow file invalid.
   # ---------------------------------------------------------------------------
-  build-dods:
+  dods:
     name: Attempt DoDS SDK build (Windows x64)
     runs-on: windows-latest
     continue-on-error: true
@@ -89,19 +92,19 @@ jobs:
   diagnose:
     name: Build diagnostics
     if: always()
-    needs: [lint, build-dods]
+    needs: [lint, dods]
     runs-on: ubuntu-latest
     steps:
       - name: Report job outcomes
         run: |
-          echo "lint       = ${{ needs.lint.result }}"
-          echo "build-dods = ${{ needs.build-dods.result }}"
+          echo "lint = ${{ needs.lint.result }}"
+          echo "dods = ${{ needs.dods.result }}"
           echo
           if [ "${{ needs.lint.result }}" != "success" ]; then
             echo "::error::Stub syntax check failed - the reconstructed sources do not compile."
             exit 1
           fi
-          if [ "${{ needs.build-dods.result }}" != "success" ]; then
+          if [ "${{ needs.dods.result }}" != "success" ]; then
             echo "::warning::DoDS real-SDK build did not succeed. This job is best-effort;"
-            echo "            inspect the build-dods log for header/ABI mismatches."
+            echo "            inspect the dods log for header/ABI mismatches."
           fi
