@@ -78,58 +78,69 @@ namespace
 
     // The CONTEXT layout depends on the target: x64 has RIP/RSP/RBP/R8-R15,
     // Win32 x86 only has EIP/ESP/EBP/EAX-EDI. Both have EFlags.
-    void DumpContext(FILE* f, const CONTEXT& ctx)
+    void DumpContext(FILE* f, const CONTEXT* ctx)
     {
+        if (ctx == nullptr)
+        {
+            std::fprintf(f, " (no context available)\n");
+            return;
+        }
+        const CONTEXT& c = *ctx;
 #if defined(_WIN64)
         std::fprintf(f, "--- registers (x64) ---\n");
-        WriteRegisterLine(f, "RIP", ctx.Rip);
-        WriteRegisterLine(f, "RSP", ctx.Rsp);
-        WriteRegisterLine(f, "RBP", ctx.Rbp);
-        WriteRegisterLine(f, "RAX", ctx.Rax);
-        WriteRegisterLine(f, "RBX", ctx.Rbx);
-        WriteRegisterLine(f, "RCX", ctx.Rcx);
-        WriteRegisterLine(f, "RDX", ctx.Rdx);
-        WriteRegisterLine(f, "RSI", ctx.Rsi);
-        WriteRegisterLine(f, "RDI", ctx.Rdi);
-        WriteRegisterLine(f, "R8 ", ctx.R8);
-        WriteRegisterLine(f, "R9 ", ctx.R9);
-        WriteRegisterLine(f, "R10", ctx.R10);
-        WriteRegisterLine(f, "R11", ctx.R11);
-        WriteRegisterLine(f, "R12", ctx.R12);
-        WriteRegisterLine(f, "R13", ctx.R13);
-        WriteRegisterLine(f, "R14", ctx.R14);
-        WriteRegisterLine(f, "R15", ctx.R15);
+        WriteRegisterLine(f, "RIP", c.Rip);
+        WriteRegisterLine(f, "RSP", c.Rsp);
+        WriteRegisterLine(f, "RBP", c.Rbp);
+        WriteRegisterLine(f, "RAX", c.Rax);
+        WriteRegisterLine(f, "RBX", c.Rbx);
+        WriteRegisterLine(f, "RCX", c.Rcx);
+        WriteRegisterLine(f, "RDX", c.Rdx);
+        WriteRegisterLine(f, "RSI", c.Rsi);
+        WriteRegisterLine(f, "RDI", c.Rdi);
+        WriteRegisterLine(f, "R8 ", c.R8);
+        WriteRegisterLine(f, "R9 ", c.R9);
+        WriteRegisterLine(f, "R10", c.R10);
+        WriteRegisterLine(f, "R11", c.R11);
+        WriteRegisterLine(f, "R12", c.R12);
+        WriteRegisterLine(f, "R13", c.R13);
+        WriteRegisterLine(f, "R14", c.R14);
+        WriteRegisterLine(f, "R15", c.R15);
 #else
         std::fprintf(f, "--- registers (x86) ---\n");
-        WriteRegisterLine(f, "EIP", ctx.Eip);
-        WriteRegisterLine(f, "ESP", ctx.Esp);
-        WriteRegisterLine(f, "EBP", ctx.Ebp);
-        WriteRegisterLine(f, "EAX", ctx.Eax);
-        WriteRegisterLine(f, "EBX", ctx.Ebx);
-        WriteRegisterLine(f, "ECX", ctx.Ecx);
-        WriteRegisterLine(f, "EDX", ctx.Edx);
-        WriteRegisterLine(f, "ESI", ctx.Esi);
-        WriteRegisterLine(f, "EDI", ctx.Edi);
+        WriteRegisterLine(f, "EIP", c.Eip);
+        WriteRegisterLine(f, "ESP", c.Esp);
+        WriteRegisterLine(f, "EBP", c.Ebp);
+        WriteRegisterLine(f, "EAX", c.Eax);
+        WriteRegisterLine(f, "EBX", c.Ebx);
+        WriteRegisterLine(f, "ECX", c.Ecx);
+        WriteRegisterLine(f, "EDX", c.Edx);
+        WriteRegisterLine(f, "ESI", c.Esi);
+        WriteRegisterLine(f, "EDI", c.Edi);
 #endif
-        std::fprintf(f, " EFL=%.16x\n", (unsigned)ctx.EFlags);
+        std::fprintf(f, " EFL=%.16x\n", (unsigned)c.EFlags);
     }
 
     // StackWalk64 takes a non-const PVOID ContextRecord; the caller passes the
     // CONTEXT out of EXCEPTION_POINTERS, which is mutable in practice.
-    void DumpCallStack(FILE* f, CONTEXT& ctx, HANDLE process)
+    void DumpCallStack(FILE* f, CONTEXT* ctx, HANDLE process)
     {
+        if (ctx == nullptr)
+        {
+            std::fprintf(f, " (no context available - skipped unwinding)\n");
+            return;
+        }
         std::fprintf(f, "--- call stack ---\n");
 
 #if defined(_WIN64)
         const DWORD machine = IMAGE_FILE_MACHINE_AMD64;
-        const ULONG64 pc    = ctx.Rip;
-        const ULONG64 sp    = ctx.Rsp;
-        const ULONG64 fp    = ctx.Rbp;
+        const ULONG64 pc    = ctx->Rip;
+        const ULONG64 sp    = ctx->Rsp;
+        const ULONG64 fp    = ctx->Rbp;
 #else
         const DWORD machine = IMAGE_FILE_MACHINE_I386;
-        const ULONG64 pc    = ctx.Eip;
-        const ULONG64 sp    = ctx.Esp;
-        const ULONG64 fp    = ctx.Ebp;
+        const ULONG64 pc    = ctx->Eip;
+        const ULONG64 sp    = ctx->Esp;
+        const ULONG64 fp    = ctx->Ebp;
 #endif
 
         if (sp == 0)
@@ -153,7 +164,7 @@ namespace
         for (int depth = 0; depth < 64; ++depth)
         {
             BOOL ok = StackWalk64(machine, process,
-                                  GetCurrentThread(), &frame, &ctx,
+                                  GetCurrentThread(), &frame, ctx,
                                   nullptr, SymFunctionTableAccess64,
                                   SymGetModuleBase64, nullptr);
             if (!ok || frame.AddrPC.Offset == 0) break;
@@ -326,11 +337,34 @@ namespace
                                     dumpPath.c_str(), ptrs);
 
         if (!dumped)
-        {
             std::fprintf(stderr, "minidump  : could not create dump file\n");
+
+        // Also write the .cause sidecar and append the register/call-stack
+        // dump here - WriteCrashReport covers the "generic" path reached
+        // from TestCrashCmd, which has no live CONTEXT to print.
+        {
+            std::string causePath = JoinPath(g_logDir, std::string("crash_") + stampFile + ".cause");
+            FILE* c = std::fopen(causePath.c_str(), "w");
+            if (c)
+            {
+                std::fprintf(c, "%s\n", label);
+                std::fclose(c);
+            }
         }
 
         WriteCrashReport(label);
+
+        std::string reportPath = JoinPath(g_logDir, std::string("crash_") + stampFile + ".log");
+        FILE* f = std::fopen(reportPath.c_str(), "a");
+        if (f)
+        {
+            std::fprintf(f, "\n--- exception at %p (code=0x%08lx) ---\n",
+                         ptrs->ExceptionRecord->ExceptionAddress,
+                         (unsigned long)ptrs->ExceptionRecord->ExceptionCode);
+            DumpContext(f, ptrs->ContextRecord);
+            DumpCallStack(f, ptrs->ContextRecord, process);
+            std::fclose(f);
+        }
         return EXCEPTION_CONTINUE_SEARCH;
     }
 

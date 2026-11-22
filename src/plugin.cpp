@@ -68,8 +68,8 @@ bool CCrashDiagPlugin::Load(CreateInterfaceFn interfaceFactory,
                             CreateInterfaceFn /*gameServerFactory*/)
 {
     int rc = 0;
-    m_pEngine   = reinterpret_cast<IVEngineServer*>(interfaceFactory("VEngineServer023", &rc));
-    m_pCvar     = reinterpret_cast<ICvar*>(interfaceFactory("VEngineCvar004", &rc));
+    m_pEngine = reinterpret_cast<IVEngineServer*>(interfaceFactory("VEngineServer023", &rc));
+    m_pCvar   = reinterpret_cast<ICvar*>(interfaceFactory("VEngineCvar004", &rc));
 #ifdef CRASHDIAG_STUB_SDK
     m_pProcess  = reinterpret_cast<IProcessUtils*>(interfaceFactory("VProcessUtils001", &rc));
 #endif
@@ -86,6 +86,19 @@ bool CCrashDiagPlugin::Load(CreateInterfaceFn interfaceFactory,
     crashdiag::Log("[crashdiag] loaded. logdir=%s engine=%p cvar=%p enabled=%d\n",
                    m_cvLogDir.GetString(), static_cast<void*>(m_pEngine),
                    static_cast<void*>(m_pCvar), m_cvEnabled.GetBool() ? 1 : 0);
+
+    // Emit a heartbeat immediately on load. The default 60 s interval is
+    // too long to confirm the plugin is actually running, and the very first
+    // heartbeat only fires after a full minute has elapsed - so a 30-second
+    // smoke test would not catch the directory being created. This line is
+    // what a deployer looks for to prove the plugin came up.
+    {
+        CrashDiagSnapshot snap;
+        BuildSnapshot(snap);
+        crashdiag::UpdateSnapshot(snap);
+        crashdiag::WriteHeartbeat(snap);
+    }
+
     return true;
 }
 
