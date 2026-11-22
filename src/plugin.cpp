@@ -39,8 +39,8 @@ CCrashDiagPlugin::CCrashDiagPlugin()
         "Master switch for crashdiag crash capture and heartbeat."),
       m_cvLogDir("crashdiag_logdir", "crashdiag", FCVAR_NONE,
         "Subdirectory under <mod>/ where crashdiag writes its logs."),
-      m_cvInterval("crashdiag_heartbeat_interval", "60", FCVAR_NONE,
-        "Seconds between heartbeat.log lines (0 disables heartbeat)."),
+      m_cvInterval("crashdiag_heartbeat_interval", "0", FCVAR_NONE,
+        "Seconds between heartbeat.log lines (0 disables heartbeat, the default)."),
       m_cvEnableTest("crashdiag_enable_test", "0", FCVAR_NONE,
         "When 1, the crashdiag_test_crash command is allowed to actually crash."),
       m_cmdTestCrash("crashdiag_test_crash", &CCrashDiagPlugin::TestCrashCmd,
@@ -87,17 +87,9 @@ bool CCrashDiagPlugin::Load(CreateInterfaceFn interfaceFactory,
                    m_cvLogDir.GetString(), static_cast<void*>(m_pEngine),
                    static_cast<void*>(m_pCvar), m_cvEnabled.GetBool() ? 1 : 0);
 
-    // Emit a heartbeat immediately on load. The default 60 s interval is
-    // too long to confirm the plugin is actually running, and the very first
-    // heartbeat only fires after a full minute has elapsed - so a 30-second
-    // smoke test would not catch the directory being created. This line is
-    // what a deployer looks for to prove the plugin came up.
-    {
-        CrashDiagSnapshot snap;
-        BuildSnapshot(snap);
-        crashdiag::UpdateSnapshot(snap);
-        crashdiag::WriteHeartbeat(snap);
-    }
+    // Heartbeat is disabled by default (crashdiag_heartbeat_interval=0).
+    // Load-time confirmation now goes to the console via the Log() above;
+    // no heartbeat.log line is written unless the interval is explicitly set.
 
     return true;
 }

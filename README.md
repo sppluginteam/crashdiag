@@ -58,7 +58,7 @@ simply rejected by the loader and the plugin never loads.
 | --- | --- | --- |
 | `crashdiag_enabled` | `1` | Master switch for crash capture and heartbeat. |
 | `crashdiag_logdir` | `crashdiag` | Subdirectory under `<mod>/` where logs are written. |
-| `crashdiag_heartbeat_interval` | `60` | Seconds between `heartbeat.log` lines (`0` disables heartbeat). |
+| `crashdiag_heartbeat_interval` | `0` | Seconds between `heartbeat.log` lines (`0` disables heartbeat, the default). |
 | `crashdiag_enable_test` | `0` | When `1`, `crashdiag_test_crash` may actually crash. |
 
 ### Console command
@@ -88,14 +88,19 @@ overflow, in-page error, breakpoint, the C++ EH code `0xE06D7363`,
 
 ## Install
 
-1. Build the plugin for the architecture your server runs (see above).
-2. Copy the binary and the manifest into the mod directory:
+1. Either grab a prebuilt archive from the latest release (extract its
+   contents directly into `<mod>/addons/` - no extra folders and no vdf
+   editing needed), or build the plugin for your architecture (see below).
+2. The installed layout is:
 
    ```
    <mod>/addons/crashdiag.dll      # Windows (matching 32/64-bit srcds)
    <mod>/addons/crashdiag.so       # Linux (best-effort)
-   <mod>/addons/crashdiag.vdf
+   <mod>/addons/crashdiag.vdf      # references "addons/crashdiag" - leave as-is
    ```
+
+   Heartbeat is off by default (`crashdiag_heartbeat_interval 0`); crash
+   capture works regardless.
 
 ## Build
 

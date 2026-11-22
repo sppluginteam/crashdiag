@@ -40,7 +40,7 @@ Source 引擎服务器**崩溃转储诊断插件**。以 `IServerPluginCallbacks
 | --- | --- | --- |
 | `crashdiag_enabled` | `1` | 崩溃捕获与心跳的总开关 |
 | `crashdiag_logdir` | `crashdiag` | 日志子目录（位于 `<mod>/` 下） |
-| `crashdiag_heartbeat_interval` | `60` | 心跳行间隔秒数（0 关闭心跳） |
+| `crashdiag_heartbeat_interval` | `0` | 心跳行间隔秒数（0 关闭心跳，默认值） |
 | `crashdiag_enable_test` | `0` | 置 1 后 `crashdiag_test_crash` 才允许真的崩溃 |
 
 ### 控制台命令

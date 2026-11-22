@@ -154,7 +154,10 @@ jobs:
           for arch in 32 64; do
             dll=$(find "artifacts/crashdiag-dods-win$arch" -name crashdiag.dll | head -1)
             [ -n "$dll" ] || { echo "::error::crashdiag.dll missing for win$arch"; exit 1; }
-            d="pkg/crashdiag-win$arch/crashdiag"
+            # Unpack-ready layout: the zip root IS the <game>/addons/ directory.
+            # crashdiag.vdf points to "addons/crashdiag", so the DLL must sit
+            # at addons/crashdiag.dll - no extra folder, no vdf editing needed.
+            d="pkg/crashdiag-win$arch"
             mkdir -p "$d"
             cp "$dll" "$d/crashdiag.dll"
             cp crashdiag.vdf "$d/crashdiag.vdf"
@@ -164,13 +167,18 @@ jobs:
           crashdiag - DoDS test build (Win32 x86)
 
           Install for srcds.exe (32-bit server):
-            1. copy the "crashdiag" folder into <game>/addons/
+            1. extract the ZIP contents into <game>/addons/ so you end up with:
+                 <game>/addons/crashdiag.dll
+                 <game>/addons/crashdiag.vdf
+               (the vdf already points to "addons/crashdiag" - do NOT edit it
+                and do NOT create an extra "crashdiag" subfolder)
             2. restart the server or changelevel
             3. plugin_print should list: crashdiag - independent ES/ESTools crash diagnostic
             4. crashdiag_enable_test 1; crashdiag_test_crash  -- verifies capture
 
-          Logs land in <game>/crashdiag/ (crash_*.log, crash_*.mdmp, crash_*.cause,
-          heartbeat.log).
+          Logs land in <game>/crashdiag/ (crash_*.log, crash_*.mdmp, crash_*.cause).
+          Heartbeat is OFF by default (crashdiag_heartbeat_interval 0); enable
+          with "crashdiag_heartbeat_interval 60" if you want heartbeat.log.
           EOF
           sed 's/Win32 x86/Win64 x64/; s/srcds.exe (32-bit server)/srcds_win64.exe (64-bit server)/' \
             pkg/crashdiag-win32/install.txt > pkg/crashdiag-win64/install.txt
@@ -190,9 +198,13 @@ jobs:
           cat > notes.md <<EOF
           DoDS (Day of Defeat: Source) test build of the reconstructed crashdiag plugin.
 
-          Assets
-            - crashdiag-dods-win32.zip  - addons/crashdiag for srcds.exe (x86)
-            - crashdiag-dods-win64.zip  - addons/crashdiag for srcds_win64.exe (x64)
+          Assets (unpack-ready - extract into <game>/addons/):
+            - crashdiag-dods-win32.zip  - crashdiag.dll + crashdiag.vdf for srcds.exe (x86)
+            - crashdiag-dods-win64.zip  - crashdiag.dll + crashdiag.vdf for srcds_win64.exe (x64)
+
+          No vdf editing and no extra folders needed: the archive root is the
+          addons/ directory, and crashdiag.vdf already references "addons/crashdiag".
+          Heartbeat is OFF by default (crashdiag_heartbeat_interval 0).
 
           Built from $GITHUB_SHA against alliedmodders/hl2sdk branch dods.
           The DLL links neither tier0.lib nor tier1.lib: it carries its own
