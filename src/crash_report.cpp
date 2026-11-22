@@ -40,6 +40,27 @@ namespace
     // Exception code -> human readable label. Labels mirror the table embedded
     // in the compiled binary.
 #if defined(_WIN32)
+    // Debug-string "exceptions" are NOT crashes. The OS raises 0x40010006 /
+    // 0x40010007 to deliver OutputDebugString() text to an attached debugger.
+    // Source/Valve servers emit these at startup (Steam init). An earlier
+    // build treated them as fatal: without a debugger the VEH wrote a 230MB+
+    // full-memory dump and the process exited with 0x40010006, which looked
+    // exactly like a crash on startup. Ignore benign/control exceptions so
+    // they flow to the next handler (or OutputDebugString's default no-op).
+    static bool IsBenignException(DWORD code)
+    {
+        switch (code)
+        {
+        case 0x40010006: // DBG_PRINTEXCEPTION_C   (OutputDebugStringA)
+        case 0x40010007: // DBG_PRINTEXCEPTION_WIDE_C (OutputDebugStringW)
+        case 0x40010008: // DBG_CONTROL_C
+        case 0x40010009: // DBG_CONTROL_BREAK
+            return true;
+        default:
+            return false;
+        }
+    }
+
     const char* ClassifyException(DWORD code)
     {
         switch (code)
@@ -220,8 +241,17 @@ namespace
         excInfo.ExceptionPointers  = ptrs;
         excInfo.ClientPointers    = FALSE;
 
+        // Full-memory dumps of a Source server are 200-300 MB each; with the
+        // benign events filtered above this is now only written for real
+        // crashes, but keep it lean so a crash storm cannot fill the disk.
+        // Includes data segments, handles and loaded-module info - enough to
+        // reproduce heap corruption and get a stack, at a fraction of the size.
         BOOL ok = MiniDumpWriteDump(process, pid, file,
-                                     MiniDumpWithFullMemory,
+                                     static_cast<MINIDUMP_TYPE>(
+                                         MiniDumpWithDataSegs |
+                                         MiniDumpWithHandleData |
+                                         MiniDumpWithUnloadedModules |
+                                         MiniDumpWithProcessThreadData),
                                      &excInfo, nullptr, nullptr);
         CloseHandle(file);
         return ok != FALSE;
@@ -326,6 +356,13 @@ namespace
         if (!ptrs || !ptrs->ExceptionRecord) return EXCEPTION_CONTINUE_SEARCH;
 
         DWORD code = ptrs->ExceptionRecord->ExceptionCode;
+
+        // Ignore debug-string / control events - they are not crashes.
+        // Writing a dump for these (and returning CONTINUE_SEARCH, letting the
+        // unhandled filter exit) masqueraded as a startup crash on x64 srcds.
+        if (IsBenignException(code))
+            return EXCEPTION_CONTINUE_SEARCH;
+
         const char* label = ClassifyException(code);
 
         char stampFile[32];
