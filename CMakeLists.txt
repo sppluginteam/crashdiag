@@ -34,6 +34,7 @@ set(SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src")
 
 option(CRASHDIAG_STUB_SDK "Compile against the bundled stub SDK" ON)
 option(CRASHDIAG_COMPILE_ONLY "Object library only (no link)" OFF)
+option(CRASHDIAG_STATIC_CRT "Link the C runtime statically (/MT). Recommended for dedicated servers that lack the MSVC shared runtime DLLs." ON)
 set(HL2SDK_PATH "" CACHE PATH "Path to a real HL2SDK public/ tree (non-stub build)")
 
 set(CRASHDIAG_SOURCES
@@ -96,6 +97,32 @@ if(MSVC)
     else()
         target_compile_definitions(crashdiag PRIVATE COMPILER_MSVC32=1)
     endif()
+endif()
+
+# /MT static CRT. The engine's LoadLibraryEx silently rejects a PE whose
+# shared-CRT imports (MSVCP140 / VCRUNTIME140 / api-ms-win-crt-*) are not
+# resolvable in the server's DLL search path - the failure shows up as
+# "Unable to load plugin" with Win32 error 193 (ERROR_BAD_FORMAT), exactly
+# the same message a missing file produces. Forcing /MT makes the binary
+# self-contained: only OS DLLs (dbghelp, psapi, KERNEL32) are imported.
+if(MSVC AND CRASHDIAG_STATIC_CRT)
+    target_compile_options(crashdiag PRIVATE /MT)
+    # CMake adds /MD by default for Release on MSVC; strip it so /MT wins.
+    foreach(_flag_var CMAKE_C_FLAGS CMAKE_C_FLAGS_RELEASE CMAKE_CXX_FLAGS CMAKE_CXX_FLAGS_RELEASE)
+        if(DEFINED ${_flag_var})
+            string(REGEX REPLACE "/MD" "/MT" ${_flag_var} "${${_flag_var}}")
+        endif()
+    endforeach()
+endif()
+
+# Subsystem: all working 32-bit Source server plugins in this tree
+# (rcbot.2.dods.dll, serverplugin_empty.dll) are built as Windows GUI
+# subsystem. Match that so the loader treats crashdiag.dll the same way.
+# Override with -DMSVC_SUBSYSTEM=CONSOLE if a console build is ever wanted.
+if(MSVC AND MSVC_SUBSYSTEM STREQUAL "CONSOLE")
+    set_target_properties(crashdiag PROPERTIES LINK_FLAGS "/SUBSYSTEM:CONSOLE")
+else()
+    set_target_properties(crashdiag PROPERTIES LINK_FLAGS "/SUBSYSTEM:WINDOWS")
 endif()
 
 if(NOT CRASHDIAG_COMPILE_ONLY)
