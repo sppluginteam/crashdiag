@@ -20,6 +20,9 @@ public:
     virtual int GetTickCount() = 0;
     // Command-line basedir / game path helpers.
     virtual const char* GetGameDirectory() = 0;
+    // Real SDK signature: copies the absolute mod/game dir into szGetGameDir.
+    // Used by the real-SDK build to anchor crash logs under <mod>/.
+    virtual void GetGameDir(char* szGetGameDir, int maxlength) = 0;
 };
 
 class IProcessUtils
