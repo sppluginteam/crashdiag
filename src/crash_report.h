@@ -29,8 +29,10 @@ void UpdateSnapshot(const CrashDiagSnapshot& snapshot);
 // Current snapshot (copied under the reporter's own lock when needed).
 CrashDiagSnapshot CurrentSnapshot();
 
-// Build the log directory (<mod>/<logdir>) if it is missing.
-void EnsureLogDirectory(const char* logDir);
+// Build the log directory (<modDir>/<logDir>) if it is missing. modDir is the
+// absolute game/mod path from IVEngineServer::GetGameDir(); all crash output
+// is placed there so it lands under the mod folder, not the process CWD.
+void EnsureLogDirectory(const char* logDir, const char* modDir);
 
 // Current configured log directory (heartbeat writer shares it).
 const char* LogDir();

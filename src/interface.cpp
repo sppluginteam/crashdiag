@@ -22,40 +22,15 @@
 #define IFACE_FAILED 1
 #endif
 
-// DllMain confirms the DLL was actually loaded by the engine and, when the
-// engine reports "Unable to load plugin", tells us whether it was rejected
-// during DllMain (returning FALSE here makes LoadLibraryEx fail with the
-// same message as a missing file). A file-based trace in the crash log dir
-// also survives the stdout-buffering quirks observed in prior sessions.
+// DllMain is intentionally SILENT. It must not write any log file and must
+// not call OutputDebugStringA: a healthy, non-crashing server produces zero
+// files and zero debug events from crashdiag. (Writing a load trace here and
+// emitting OutputDebugString were both removed - the latter even looked like
+// a crash on un-debugged x64 servers.) All real output happens only when an
+// actual crash is captured, or when the heartbeat is explicitly enabled.
 #if defined(_WIN32)
-  #include <cstdio>
-BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpReserved)
+BOOL WINAPI DllMain(HINSTANCE /*hinstDLL*/, DWORD /*fdwReason*/, LPVOID /*lpReserved*/)
 {
-    (void)lpReserved;
-    if (fdwReason == DLL_PROCESS_ATTACH)
-    {
-        // Open the log dir from the same path the Load() step will use
-        // (crashdiag_logdir cvar defaults to "crashdiag", so the CWD at
-        // plugin-load time - which the engine sets to <mod>/ - is where the
-        // trace goes).
-        FILE* f = std::fopen("crashdiag\\_load_trace.log", "a");
-        if (f)
-        {
-            std::fprintf(f, "[crashdiag] DllMain PROCESS_ATTACH %p\n", (void*)hinstDLL);
-            std::fclose(f);
-        }
-        OutputDebugStringA("[crashdiag] DllMain PROCESS_ATTACH - loaded\n");
-    }
-    else if (fdwReason == DLL_PROCESS_DETACH)
-    {
-        FILE* f = std::fopen("crashdiag\\_load_trace.log", "a");
-        if (f)
-        {
-            std::fprintf(f, "[crashdiag] DllMain PROCESS_DETACH\n");
-            std::fclose(f);
-        }
-        OutputDebugStringA("[crashdiag] DllMain PROCESS_DETACH\n");
-    }
     return TRUE;
 }
 #endif

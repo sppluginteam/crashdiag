@@ -76,7 +76,13 @@ bool CCrashDiagPlugin::Load(CreateInterfaceFn interfaceFactory,
 
     crashdiag::SetLogEngine(m_pEngine);
     RegisterCommands();
-    crashdiag::EnsureLogDirectory(m_cvLogDir.GetString());
+
+    // Resolve the mod directory from the engine so all crash output lands
+    // under <mod>/crashdiag/ rather than the process CWD.
+    char modDir[512] = {0};
+    if (m_pEngine)
+        m_pEngine->GetGameDir(modDir, sizeof(modDir));
+    crashdiag::EnsureLogDirectory(m_cvLogDir.GetString(), modDir);
     crashdiag::InstallCrashHandler();
 
     m_loaded = true;

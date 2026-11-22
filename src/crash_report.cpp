@@ -272,12 +272,43 @@ CrashDiagSnapshot CurrentSnapshot()
     return g_snapshot;
 }
 
-void EnsureLogDirectory(const char* logDir)
+void EnsureLogDirectory(const char* logDir, const char* modDir)
 {
     std::lock_guard<std::mutex> lock(g_stateLock);
-    g_logDir = logDir ? logDir : "crashdiag";
+    const char* sub = (logDir && *logDir) ? logDir : "crashdiag";
+
+    // Resolve the log directory to an absolute path under the mod folder.
+    // Previously we used the relative "crashdiag\\" which the engine resolved
+    // against the process CWD - that could land outside <mod>/ (e.g. D:\dods\
+    // instead of D:\dods\dod\). Anchor it to the real mod path when available.
+    if (modDir && *modDir)
+    {
+        std::string m(modDir);
+        while (!m.empty() && (m.back() == '\\' || m.back() == '/'))
+            m.pop_back();
+        g_logDir = m + "\\" + sub;
+    }
+    else
+    {
+        g_logDir = sub; // fallback: old behavior (still works if CWD == <mod>)
+    }
+
 #if defined(_WIN32)
-    CreateDirectoryA(g_logDir.c_str(), nullptr);
+    // CreateDirectoryA only makes one level; create intermediate dirs too.
+    if (!g_logDir.empty())
+    {
+        std::string partial;
+        for (std::size_t i = 0; i < g_logDir.size(); ++i)
+        {
+            if (g_logDir[i] == '\\' || g_logDir[i] == '/')
+            {
+                if (i > 2) // skip root like "D:\"
+                    CreateDirectoryA(partial.c_str(), nullptr);
+            }
+            partial.push_back(g_logDir[i]);
+        }
+        CreateDirectoryA(g_logDir.c_str(), nullptr);
+    }
 #endif
 }
 
