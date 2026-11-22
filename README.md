@@ -146,6 +146,14 @@ crashdiag.vdf                 Engine plugin manifest
 
 ## Caveats
 
+- The Windows build ignores the benign debug-string pseudo-exceptions
+  (`0x40010006` / `0x40010007` from `OutputDebugString`, plus `DBG_CONTROL_C/BREAK`).
+  Valve / Steam servers emit these during startup; treating them as crashes made
+  an un-debugged server write a 200MB+ full-memory dump and exit with
+  `0x40010006` — i.e. a fake "64-bit server crashes on startup". Since v0.1.3
+  these are filtered, and the minidump is `DataSegs|HandleData|UnloadedModules|
+  ProcessThreadData` rather than `MiniDumpWithFullMemory` (enough for stack/heap
+  diagnosis without filling the disk).
 - The stub headers declare only the methods the plugin calls. Real engine ABI
   vtable order and full interface signatures must come from the target
   `hl2sdk-*` tree.

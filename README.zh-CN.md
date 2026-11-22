@@ -112,6 +112,13 @@ crashdiag.vdf                 引擎插件清单
 
 ## 已知限制
 
+- Windows 版会忽略 `OutputDebugString` 产生的伪异常（`0x40010006` / `0x40010007`，
+  以及 `DBG_CONTROL_C/BREAK`）。Valve / Steam 服务器在启动阶段会发出这些事件；
+  如果把它们当崩溃处理，在没有调试器附加时会写出 200MB+ 的完整内存转储并让进程
+  以 `0x40010006` 退出——表现就是"64 位服务器一启动就崩溃"。v0.1.3 起这些事件
+  被过滤，minidump 也从 `MiniDumpWithFullMemory` 改为
+  `DataSegs|HandleData|UnloadedModules|ProcessThreadData`（足够分析栈和堆损坏，
+  又不会填满磁盘）。
 - 桩头文件只声明插件实际调用的方法；真实引擎 ABI 的 vtable 顺序与完整接口签名必须取自目标 `hl2sdk-*`。
 - 本次重建没有反编译器参与，即便可观测输出一致，内部结构也可能与丢失的原版不同。
 - Linux 构建为尽力支持；非 Windows 下转储捕获为空实现，心跳与报告写入仍然可用。
