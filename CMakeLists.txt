@@ -119,10 +119,12 @@ endif()
 # (rcbot.2.dods.dll, serverplugin_empty.dll) are built as Windows GUI
 # subsystem. Match that so the loader treats crashdiag.dll the same way.
 # Override with -DMSVC_SUBSYSTEM=CONSOLE if a console build is ever wanted.
-if(MSVC AND MSVC_SUBSYSTEM STREQUAL "CONSOLE")
-    set_target_properties(crashdiag PROPERTIES LINK_FLAGS "/SUBSYSTEM:CONSOLE")
-else()
-    set_target_properties(crashdiag PROPERTIES LINK_FLAGS "/SUBSYSTEM:WINDOWS")
+if(WIN32)
+    if(MSVC AND MSVC_SUBSYSTEM STREQUAL "CONSOLE")
+        set_target_properties(crashdiag PROPERTIES LINK_FLAGS "/SUBSYSTEM:CONSOLE")
+    else()
+        set_target_properties(crashdiag PROPERTIES LINK_FLAGS "/SUBSYSTEM:WINDOWS")
+    endif()
 endif()
 
 if(NOT CRASHDIAG_COMPILE_ONLY)
